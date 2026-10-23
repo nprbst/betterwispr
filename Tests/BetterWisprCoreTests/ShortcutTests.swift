@@ -58,6 +58,16 @@ import Testing
     #expect(fn.cancelModifiers == [[]])
 }
 
+@Test func shiftHoldsBackReturnOnlyWhenTheShortcutDoesNotUseIt() throws {
+    let controlShiftD = try #require(DictationShortcut(keyCode: UInt32(kVK_ANSI_D), modifiers: [.control, .shift], key: "D"))
+    let rightShift = try #require(DictationShortcut(keyCode: UInt32(kVK_RightShift), modifiers: [], key: "Right Shift"))
+    let fn = try #require(DictationShortcut(keyCode: UInt32(kVK_Function), modifiers: [], key: "Fn"))
+    #expect(!DictationShortcut.optionSpace.usesShift)
+    #expect(!fn.usesShift)
+    #expect(controlShiftD.usesShift)
+    #expect(rightShift.usesShift)
+}
+
 @Test @MainActor func eachShortcutAnswersOnlyItsOwnCarbonHotKey() throws {
     let dictation = GlobalShortcut()
     let cancel = GlobalShortcut(id: 2)

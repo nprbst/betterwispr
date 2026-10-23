@@ -6,6 +6,51 @@ version, Mac model, input device, engine/model and date for future runs. A
 successful build does not verify microphone capture, clipboard behavior or
 general recognition accuracy.
 
+## Send to Claude check, 2026-10-22
+
+`swift build` and `swift test` passed with 307 tests. The VS Code and Ghostty
+Accessibility rules come from a probe of VS Code running Claude Code 2.1.301
+and of Ghostty on this Mac. By hand on macOS 26 with Hold to talk, Claude
+Desktop's message box, the Claude Code panel, a VS Code terminal running claude,
+a Ghostty tab running claude and, once allowed, a Terminal tab running claude
+pasted and sent. That needed two fixes found by hand: the native Claude Code
+process is named after its version, so it is matched by its executable path,
+and Terminal is asked with an Apple Event from BetterWispr rather than through
+osascript. iTerm2 and the items below without results have not been exercised.
+
+- [ ] Turn on Send to Claude. Dictate into Claude Desktop's message box with
+  Hold to talk and with Toggle. The capsule shows ↵, the text is pasted and
+  submitted, and the listening status says "Release ⌥Space to send". With a
+  Claude Desktop button or menu focused, nothing is sent.
+- [ ] The Claude Code panel in VS Code, a VS Code terminal running claude and a
+  Ghostty tab running claude send. A VS Code shell terminal, an open file and a
+  Ghostty shell tab paste without sending and show no ↵.
+- [ ] Quit VS Code, open it, and dictate into the Claude Code panel first. The
+  text is pasted, not copied, and sent.
+- [ ] With Terminal and iTerm2 allowed in Settings, a tab running claude sends
+  and a shell tab doesn't. Quit claude in a tab and dictate there: no send. With
+  permission denied, nothing is sent and no prompt appears while dictating. The
+  waveform doesn't stutter while recording in Terminal.
+- [ ] With a Claude Code permission prompt showing, Return answers it, as the
+  caption warns.
+- [ ] Hold Shift as you press the shortcut, and separately add Shift just before
+  releasing it. The text is pasted, not sent, and the hold still ends on release.
+- [ ] With Send to Claude off, Shift-Option-Space still reaches the frontmost app.
+- [ ] Switch apps during transcription. Nothing is sent. Click into another field
+  in the same app during the countdown: "Pasted, not sent".
+- [ ] Keep the shortcut's Option held for a moment after the paste. Claude still
+  receives a plain Return.
+- [ ] The countdown shows "Sending…" with a draining bar, then sends. Press the
+  shortcut again during it: nothing is sent, the second dictation is pasted after
+  the first with a space and one Return sends both. Let the second hear nothing:
+  the failure says the first was pasted but not sent. Press Escape, or click
+  Don't send, during a countdown: nothing is sent and Escape doesn't reach
+  Claude Code. At 120 ms no card appears.
+- [ ] Cancel a dictation in a non-Claude app and Undo it: no "Sending…" card.
+- [ ] Sleep the Mac during the countdown: nothing is sent on wake.
+- [ ] Find the shortest wait that sends a long paste in full in each app, and
+  record it here.
+
 ## Combined 0.1.6 checks, 2026-10-20
 
 After combining the Codex subscription changes with the dictation and Ask fixes,

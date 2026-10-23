@@ -259,3 +259,20 @@ import Testing
     detector.update([zoom], recording: [zoom.appID])
     #expect(detector.meeting == zoom)
 }
+
+@Test @MainActor func escapeStaysArmedWhileASendCountsDownAndHoldingBackEndsIt() throws {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let model = AppModel(store: LocalStore(directory: folder), startsServices: false)
+    var armed: [Bool] = []
+    model.onBusyChange = { armed.append($0) }
+
+    model.phase = .transcribing
+    model.phase = .sending
+    #expect(armed == [true])
+    model.holdBackReturn()
+    #expect(model.phase == .idle && armed == [true, false])
+    model.holdBackReturn()
+    #expect(model.phase == .idle && armed == [true, false])
+}
