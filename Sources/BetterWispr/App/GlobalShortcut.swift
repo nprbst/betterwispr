@@ -22,6 +22,11 @@ final class GlobalShortcut {
         identifier = EventHotKeyID(signature: 0x42575350, id: id)
     }
 
+    isolated deinit {
+        unregister()
+        if let handler { RemoveEventHandler(handler) }
+    }
+
     func register(_ shortcut: DictationShortcut, withShift: Bool = false) throws {
         unregister()
         wantsShift = withShift
@@ -129,14 +134,16 @@ enum ShortcutError: LocalizedError {
     case accessibilityRequired
     case monitorUnavailable
     case alreadyAssigned(DictationShortcut)
-    case cancelNeedsKey
+    case needsKey
+    case cancelsDictation
     var errorDescription: String? {
         switch self {
         case .unavailable(let shortcut): "\(shortcut.displayName) is used by another app."
         case .accessibilityRequired: "Allow Accessibility in Settings to use a modifier key by itself."
         case .monitorUnavailable: "Couldn’t listen for the modifier key. Try choosing the shortcut again."
         case .alreadyAssigned(let shortcut): "\(shortcut.displayName) is already BetterWispr’s other shortcut."
-        case .cancelNeedsKey: "The cancel shortcut needs a key, not a modifier alone."
+        case .needsKey: "This shortcut needs a key, not a modifier alone."
+        case .cancelsDictation: "Esc cancels a dictation, so this shortcut can’t use it."
         }
     }
 }

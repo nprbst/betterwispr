@@ -168,6 +168,8 @@ final class AppModel {
     @ObservationIgnored private let globalShortcut = GlobalShortcut()
     @ObservationIgnored private let cancelShortcut = GlobalShortcut(id: 2)
     @ObservationIgnored private let customCancelShortcut = GlobalShortcut(id: 3)
+    @ObservationIgnored private let selectedTextShortcut = GlobalShortcut(id: 4)
+    @ObservationIgnored private var selectedTextCleanup: Task<Void, Never>?
     @ObservationIgnored private var microphoneObserver: AudioInputObserver?
     @ObservationIgnored private var shortcutWarning: String?
     @ObservationIgnored private var provider: (any SpeechProvider)?
@@ -238,7 +240,7 @@ final class AppModel {
         settings.launchAtLogin = SMAppService.mainApp.status == .enabled
         meetings.notesSettings = settings
         meetings.remembersVoices = settings.rememberVoices
-        for cli in Set([settings.notesCLI, settings.askSettings.notesCLI].compactMap { $0 }) { Task { await refreshNotesCLIModels(cli) } }
+        for cli in Set([settings.notesCLI, settings.askSettings.notesCLI, settings.cleanupSettings.notesCLI].compactMap { $0 }) { Task { await refreshNotesCLIModels(cli) } }
         refreshModels()
         refreshCalendars()
         recorder.onLevel = { [weak self] levels in self?.voiceLevels = levels }
@@ -254,6 +256,7 @@ final class AppModel {
         globalShortcut.onRelease = { [weak self] in self?.shortcutReleased() }
         cancelShortcut.onPress = { [weak self] in self?.cancelOrHoldBack() }
         customCancelShortcut.onPress = { [weak self] in self?.cancelOrHoldBack() }
+        selectedTextShortcut.onPress = { [weak self] in self?.cleanUpSelectedText() }
         onBusyChange = { [weak self] busy in self?.armCancelShortcut(busy) }
         warmUpSelectedModel()
         let warmUpAfterWake: @Sendable (Notification) -> Void = { [weak self] _ in
@@ -290,6 +293,7 @@ final class AppModel {
     }
 
     func registerShortcut() {
+        if let shortcut = settings.selectedTextShortcut { try? selectedTextShortcut.register(shortcut) }
         do {
             try globalShortcut.register(settings.shortcut, withShift: settings.sendToClaude)
             if statusMessage == shortcutWarning { statusMessage = "" }
@@ -299,7 +303,10 @@ final class AppModel {
         }
     }
 
-    func suspendShortcut() { globalShortcut.unregister() }
+    func suspendShortcut() {
+        globalShortcut.unregister()
+        selectedTextShortcut.unregister()
+    }
 
     private func armCancelShortcut(_ busy: Bool) {
         if busy {
@@ -313,7 +320,7 @@ final class AppModel {
 
     func changeShortcut(_ shortcut: DictationShortcut) {
         guard !isBusy else { return }
-        if shortcut == settings.cancelShortcut {
+        if shortcut == settings.cancelShortcut || shortcut == settings.selectedTextShortcut {
             registerShortcut()
             ToastWindow.shared.show(Toast(failure: "Couldn’t use \(shortcut.displayName)", ShortcutError.alreadyAssigned(shortcut)))
             return
@@ -334,8 +341,8 @@ final class AppModel {
         guard !isBusy else { return }
         if let shortcut {
             do {
-                if shortcut.isModifierOnly { throw ShortcutError.cancelNeedsKey }
-                if shortcut == settings.shortcut { throw ShortcutError.alreadyAssigned(shortcut) }
+                if shortcut.isModifierOnly { throw ShortcutError.needsKey }
+                if shortcut == settings.shortcut || shortcut == settings.selectedTextShortcut { throw ShortcutError.alreadyAssigned(shortcut) }
                 try customCancelShortcut.register(shortcut)
                 customCancelShortcut.unregister()
             } catch {
@@ -419,6 +426,76 @@ final class AppModel {
         if phase == .recording, statusMessage.hasPrefix("Listening.") { statusMessage = listeningStatus }
     }
 
+    func changeSelectedTextShortcut(_ shortcut: DictationShortcut?) {
+        guard !isBusy else { return }
+        if let shortcut {
+            do {
+                if shortcut.isModifierOnly { throw ShortcutError.needsKey }
+                if shortcut.keyCode == UInt32(kVK_Escape) { throw ShortcutError.cancelsDictation }
+                if shortcut == settings.shortcut || shortcut == settings.cancelShortcut { throw ShortcutError.alreadyAssigned(shortcut) }
+                try selectedTextShortcut.register(shortcut)
+            } catch {
+                registerShortcut()
+                ToastWindow.shared.show(Toast(failure: "Couldn’t use \(shortcut.displayName)", error))
+                return
+            }
+        } else {
+            selectedTextShortcut.unregister()
+        }
+        settings.selectedTextShortcut = shortcut
+        saveSettings()
+    }
+
+    func cleanUpSelectedText() {
+        guard selectedTextCleanup == nil else { showSelectedTextProgress(); return }
+        selectedTextCleanup = Task { [weak self] in
+            guard let self, let outcome = await self.selectedTextOutcome(), !Task.isCancelled else { return }
+            self.selectedTextCleanup = nil
+            ToastWindow.shared.show(outcome.toast(allowingAccessibility: self.requestAccessibility))
+        }
+    }
+
+    private func selectedTextOutcome() async -> SelectedTextCleanupOutcome? {
+        guard !isBusy else { return .busy }
+        guard AXIsProcessTrusted() else { return .needsAccessibility }
+        guard let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return .noOtherApp }
+        guard !IsSecureEventInputEnabled() else { return .secureInput }
+        let selection = await DictationContext.selection(in: app)
+        let selected = selection?.text ?? ""
+        guard !Task.isCancelled else { return nil }
+        let settings = settings.cleanupSettings
+        if let refusal = SelectedTextCleanupOutcome.refusal(of: selected, settings: settings) { return refusal }
+        showSelectedTextProgress()
+        let edited = await TranscriptPolisher.polish(selected.trimmingCharacters(in: .whitespacesAndNewlines), settings: settings,
+                                                     vocabulary: VocabularyProcessor.hints(vocabulary), context: nil)
+        guard !Task.isCancelled else { return nil }
+        guard let edited else { return .leftAsIs(model: settings.notesModelName) }
+        guard let replacement = SelectedTextCleanupOutcome.replacement(keepingWhitespaceOf: selected, ifChangedTo: edited) else { return .alreadyClean }
+        let currentSelection = await DictationContext.selection(in: app)
+        let stillSelected = selection?.matches(currentSelection) == true
+        guard !Task.isCancelled else { return nil }
+        do {
+            guard stillSelected else {
+                _ = try await ClipboardIntegration().deliver(replacement, to: nil)
+                return .copied
+            }
+            switch try await FocusedAppIntegration(keepsCopy: false, expectedFocus: selection?.element).deliver(replacement, to: app) {
+            case .pasted(let name): return .replaced(in: name)
+            case .copied, .copiedForManualPaste: return .copied
+            }
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+    }
+
+    private func showSelectedTextProgress() {
+        ToastWindow.shared.show(Toast(title: "Cleaning up…", message: "With \(settings.cleanupSettings.notesModelName). Keep the text selected.",
+                                      systemImage: "wand.and.stars", action: Toast.Action(title: "Cancel") { [weak self] in
+            self?.selectedTextCleanup?.cancel()
+            self?.selectedTextCleanup = nil
+        }))
+    }
+
     func toggleRecording() {
         if phase == .recording { finishRecording(); return }
         startRecording(held: false)
@@ -433,6 +510,11 @@ final class AppModel {
             selectedPage = .models
             fail(DictationFailure(title: "Download a model first.", message: "Download \(selectedModel.name) in Models before recording."))
             return
+        }
+        if let cleanup = selectedTextCleanup {
+            cleanup.cancel()
+            selectedTextCleanup = nil
+            ToastWindow.shared.show(SelectedTextCleanupOutcome.busy.toast(allowingAccessibility: requestAccessibility))
         }
         targetApplication = NSWorkspace.shared.frontmostApplication
         if settings.sendToClaude, let app = targetApplication { ClaudePrompt.prepare(app) }
@@ -635,7 +717,7 @@ final class AppModel {
                 let lightlyCleaned = TranscriptCleaner.clean(recognized, language: language)
                 let trigger = recording.settings.modes.match(transcript: lightlyCleaned)
                 let mode = trigger?.mode ?? recording.mode
-                let writingSettings = recording.settings.applying(mode)
+                let writingSettings = recording.settings.applying(mode).cleanupSettings
                 let cleanup = writingSettings.cleanup
                 let tone = writingSettings.tone(for: AppCategory(bundleID: appBundleID).style)
                 let base = cleanup == .none ? recognized.trimmingCharacters(in: .whitespacesAndNewlines) : lightlyCleaned
@@ -847,7 +929,7 @@ final class AppModel {
         Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(450))
             guard let self, self.generation == token, self.phase == .recording else { return }
-            let settings = self.settings.applying(self.writingMode)
+            let settings = self.settings.applying(self.writingMode).cleanupSettings
             guard settings.cleanup == .medium, settings.language == "auto" || settings.language.hasPrefix("en"),
                   MeetingNotesGenerator.availability(settings: settings) == .available else { return }
             await MeetingNotesGenerator.warmUp(settings: settings)
@@ -857,7 +939,7 @@ final class AppModel {
     /// Starts reading screen context when Parakeet with the phrase booster can spell names from it or Medium cleanup can show it, with the clipboard, to an available notes model.
     private func captureContext(for settings: AppSettings) -> Task<DictationContext, Never>? {
         guard settings.useScreenContext else { return nil }
-        let showsNotesModel = settings.cleanup == .medium && MeetingNotesGenerator.availability(settings: settings) == .available
+        let showsNotesModel = settings.cleanup == .medium && MeetingNotesGenerator.availability(settings: settings.cleanupSettings) == .available
         guard showsNotesModel || spellsScreenNames(with: selectedModel, language: settings.language) else { return nil }
         return targetApplication.map { DictationContext.capture(from: $0, recognizingScreen: settings.recognizeScreenText, readingClipboard: showsNotesModel) }
     }
@@ -1353,8 +1435,8 @@ final class AppModel {
         if case .cli(let cli) = selection { Task { await refreshNotesCLIModels(cli) } }
     }
 
-    func selectAskModel(_ selection: NotesModelSelection?) {
-        settings.askSelection = selection
+    func selectNotesModel(_ selection: NotesModelSelection?, for choice: WritableKeyPath<AppSettings, NotesModelSelection?>) {
+        settings[keyPath: choice] = selection
         saveNotesSettings()
         if case .cli(let cli) = selection { Task { await refreshNotesCLIModels(cli) } }
     }
