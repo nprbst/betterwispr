@@ -79,7 +79,7 @@ public struct FocusedAppIntegration: TextOutputIntegration {
     /// Posts a bare Return to `target` only while it is still the frontmost app with the field the dictation started in,
     /// so a pasted chat or agent prompt submits.
     public func pressReturn(in target: NSRunningApplication) -> Bool {
-        guard !Task.isCancelled, !target.isTerminated, AXIsProcessTrusted(),
+        guard let expectedFocus, !Task.isCancelled, !target.isTerminated, AXIsProcessTrusted(),
               NSWorkspace.shared.frontmostApplication?.processIdentifier == target.processIdentifier,
               Self.focusMatches(expectedFocus, current: Self.focusedElement(in: target)),
               let source = CGEventSource(stateID: .combinedSessionState),
