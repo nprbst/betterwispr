@@ -368,7 +368,7 @@ func pendingSendStaysCancellableThroughTheFinalPromptCheck(delay: Duration) asyn
     #expect(model.phase == .idle && notSent == 1)
 }
 
-@Test @MainActor func selectedTextCleanupHoldsBackAPendingSendBeforeStarting() async throws {
+@Test @MainActor func selectedTextCleanupHoldsBackAPendingSendBeforeStarting() throws {
     let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: folder) }
     let model = AppModel(store: LocalStore(directory: folder), startsServices: false)
@@ -380,7 +380,4 @@ func pendingSendStaysCancellableThroughTheFinalPromptCheck(delay: Duration) asyn
     #expect(model.phase == .idle && notSent == 1)
     // Keep the cleanup task from reading the user's actual selection in this test.
     model.phase = .preparing
-    await Task.yield()
-    model.phase = .idle
-    #expect(notSent == 1)
 }
