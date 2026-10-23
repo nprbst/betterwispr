@@ -2,46 +2,11 @@ import Foundation
 import Testing
 @testable import BetterWisprCore
 
-@Test func vsCodeClaudePanelAndTerminalTitlesAreRecognized() {
+@Test func onlyTheClaudeCodePanelIsRecognizedInVSCode() {
     #expect(ClaudePrompt.isClaudeCodePanel(description: "Message input", classes: ["messageInput_cKsPxg"]))
     #expect(!ClaudePrompt.isClaudeCodePanel(description: "Message input", classes: ["monaco-editor"]))
     #expect(!ClaudePrompt.isClaudeCodePanel(description: "Editor content", classes: ["messageInput_x"]))
-
-    let claude = "Terminal 1, 2.1.301 Run the command: Toggle Screen Reader Accessibility Mode for an optimized screen reader experience"
-    let shell = "Terminal 2, zsh Run the command: Toggle Screen Reader Accessibility Mode"
-    #expect(ClaudePrompt.terminalTitle(claude) == "2.1.301")
-    #expect(ClaudePrompt.terminalTitle(shell) == "zsh")
-    #expect(ClaudePrompt.terminalTitle("Editor content") == nil)
-    #expect(ClaudePrompt.isClaudeCodeProcessTitle("2.1.301"))
-    #expect(ClaudePrompt.isClaudeCodeProcessTitle("claude"))
-    #expect(!ClaudePrompt.isClaudeCodeProcessTitle("zsh"))
-    #expect(!ClaudePrompt.isClaudeCodeProcessTitle("2.1"))
-    #expect(!ClaudePrompt.isClaudeCodeProcessTitle(nil))
-}
-
-@Test func ghosttyTitleMustCarryClaudeCodesSpinnerGlyph() {
-    #expect(ClaudePrompt.isClaudeCodeWindowTitle("✳ Kelly-starter.zip contents"))
-    #expect(ClaudePrompt.isClaudeCodeWindowTitle("✶ Reviewing the diff"))
-    #expect(!ClaudePrompt.isClaudeCodeWindowTitle("…/git/github.com/nprbst"))
-    #expect(!ClaudePrompt.isClaudeCodeWindowTitle("duckdb -ui"))
-    #expect(!ClaudePrompt.isClaudeCodeWindowTitle("✳"))
-    #expect(!ClaudePrompt.isClaudeCodeWindowTitle(nil))
-}
-
-@Test func onlyForegroundProgramsUnderTheAppCount() {
-    let table = [
-        ClaudePrompt.ProcessEntry(pid: 10, parent: 1, command: "ghostty", device: nil, isForeground: false),
-        ClaudePrompt.ProcessEntry(pid: 11, parent: 10, command: "login", device: nil, isForeground: false),
-        ClaudePrompt.ProcessEntry(pid: 12, parent: 11, command: "zsh", device: nil, isForeground: false),
-        ClaudePrompt.ProcessEntry(pid: 13, parent: 12, command: "claude", device: 4, isForeground: true),
-        ClaudePrompt.ProcessEntry(pid: 20, parent: 1, command: "Code", device: nil, isForeground: false),
-        ClaudePrompt.ProcessEntry(pid: 21, parent: 20, command: "claude", device: nil, isForeground: false),
-        ClaudePrompt.ProcessEntry(pid: 22, parent: 20, command: "zsh", device: 4, isForeground: true),
-    ]
-    #expect(ClaudePrompt.foregroundProcesses(under: 10, in: table).map(\.command) == ["claude"])
-    // The extension's own claude has no terminal, so a VS Code shell alone doesn't count.
-    #expect(ClaudePrompt.foregroundProcesses(under: 20, in: table).map(\.command) == ["zsh"])
-    #expect(ClaudePrompt.foregroundProcesses(under: 99, in: table).isEmpty)
+    #expect(!ClaudePrompt.isClaudeCodePanel(description: "Terminal 1, claude", classes: ["xterm-helper-textarea"]))
 }
 
 @Test func aTerminalTabSendsOnlyWhenClaudeIsInFrontOnItsDevice() {
@@ -79,7 +44,7 @@ import Testing
 
 @Test func onlyATextInputInClaudeDesktopTakesReturn() {
     #expect(ClaudePrompt.isTextInput(role: "AXTextArea"))
-    #expect(ClaudePrompt.isTextInput(role: "AXTextField"))
+    #expect(!ClaudePrompt.isTextInput(role: "AXTextField"))
     #expect(!ClaudePrompt.isTextInput(role: "AXButton"))
     #expect(!ClaudePrompt.isTextInput(role: nil))
 }

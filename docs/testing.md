@@ -8,23 +8,19 @@ general recognition accuracy.
 
 ## Send to Claude check, 2026-10-22
 
-`swift build` and `swift test` passed with 307 tests. The VS Code and Ghostty
-Accessibility rules come from a probe of VS Code running Claude Code 2.1.301
-and of Ghostty on this Mac. By hand on macOS 26 with Hold to talk, Claude
-Desktop's message box, the Claude Code panel, a VS Code terminal running claude,
-a Ghostty tab running claude and, once allowed, a Terminal tab running claude
-pasted and sent. That needed two fixes found by hand: the native Claude Code
-process is named after its version, so it is matched by its executable path,
-and Terminal is asked with an Apple Event from BetterWispr rather than through
-osascript. iTerm2 and the items below without results have not been exercised.
+The original contributor reported manual checks on macOS 26. During PR review,
+Ghostty and VS Code terminal auto-send were removed because title matching could
+accept a shell after Claude exited. These terminals now paste only. The reviewed
+version still needs the live checks below; automated builds and tests do not
+verify real event delivery or terminal consent.
 
 - [ ] Turn on Send to Claude. Dictate into Claude Desktop's message box with
   Hold to talk and with Toggle. The capsule shows ↵, the text is pasted and
   submitted, and the listening status says "Release ⌥Space to send". With a
   Claude Desktop button or menu focused, nothing is sent.
-- [ ] The Claude Code panel in VS Code, a VS Code terminal running claude and a
-  Ghostty tab running claude send. A VS Code shell terminal, an open file and a
-  Ghostty shell tab paste without sending and show no ↵.
+- [ ] The Claude Code panel in VS Code sends. VS Code terminals, open files and
+  Ghostty tabs paste without sending, including a shell with a stale Claude title
+  while Claude runs in another tab.
 - [ ] Quit VS Code, open it, and dictate into the Claude Code panel first. The
   text is pasted, not copied, and sent.
 - [ ] With Terminal and iTerm2 allowed in Settings, a tab running claude sends

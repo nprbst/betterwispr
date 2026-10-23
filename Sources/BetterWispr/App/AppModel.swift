@@ -368,21 +368,23 @@ final class AppModel {
     private var shiftHeld: Bool { !settings.shortcut.usesShift && NSEvent.modifierFlags.contains(.shift) }
 
     /// Waits while the app takes the paste, and while a new dictation may still take over the send, then presses Return.
-    private func pressReturn(in app: NSRunningApplication, after delay: Duration, using paste: FocusedAppIntegration,
-                             otherwise notSent: @escaping () -> Void) {
-        // A wait too short to read would only flash the card.
+    func pressReturn(in app: NSRunningApplication, after delay: Duration, using paste: FocusedAppIntegration,
+                             otherwise notSent: @escaping () -> Void,
+                             acceptsPrompt: @escaping @MainActor (NSRunningApplication) async -> Bool = ClaudePrompt.accepts) {
         pendingReturnApp = app.processIdentifier
         pendingNotSent = notSent
-        if delay >= .milliseconds(250) { present(.sending, for: delay / .seconds(1)) }
+        phase = .sending
+        cardDuration = delay / .seconds(1)
+        cardDeadline = Date().addingTimeInterval(cardDuration)
         pendingReturn = Task { [weak self] in
             try? await Task.sleep(for: delay)
             guard let self, !Task.isCancelled else { return }
             // Turning the setting off, or moving to a shell or a file, during the countdown means no Return.
-            let accepts = self.settings.sendToClaude ? await ClaudePrompt.accepts(app) : false
+            let accepts = self.settings.sendToClaude ? await acceptsPrompt(app) : false
             guard !Task.isCancelled else { return }
             self.pendingReturn = nil
             self.pendingNotSent = nil
-            let sent = accepts && paste.pressReturn(in: app)
+            let sent = self.settings.sendToClaude && accepts && paste.pressReturn(in: app)
             if self.phase == .sending { self.phase = .idle }
             // A sent prompt leaves the field, so there is no correction to learn.
             guard !sent else { return }
@@ -1207,6 +1209,7 @@ final class AppModel {
     }
 
     func saveSettings() {
+        if !settings.sendToClaude { holdBackReturn() }
         if startsServices { applyDockVisibility() }
         syncShiftShortcut()
         do {
@@ -1363,6 +1366,7 @@ final class AppModel {
 
     func dismissCard() {
         guard !isBusy else { return }
+        if phase == .sending { holdBackReturn(); return }
         cancelledRecording = nil
         phase = .idle
     }

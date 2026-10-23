@@ -11,7 +11,6 @@ public enum ClaudePrompt {
 
     static let claudeDesktop = "com.anthropic.claudefordesktop"
     static let vsCode = "com.microsoft.VSCode"
-    static let ghostty = "com.mitchellh.ghostty"
     /// Terminals that report their focused tab's device through Apple Events once the user allows it.
     public static let scriptableTerminals = ["com.apple.Terminal", "com.googlecode.iterm2"]
 
@@ -36,12 +35,7 @@ public enum ClaudePrompt {
             let classes = focused.strings("AXDOMClassList")
             let description = focused.string(kAXDescriptionAttribute) ?? ""
             if isClaudeCodePanel(description: description, classes: classes) { return true }
-            return classes.contains("xterm-helper-textarea") && isClaudeCodeProcessTitle(terminalTitle(description))
-                && foregroundProcesses(under: pid, in: processTable()).contains(where: isClaudeCode)
-        case ghostty:
-            let window = element(pid).element(kAXFocusedWindowAttribute)
-            return isClaudeCodeWindowTitle(window?.string(kAXTitleAttribute))
-                && foregroundProcesses(under: pid, in: processTable()).contains(where: isClaudeCode)
+            return false
         case let bundleID? where scriptableTerminals.contains(bundleID):
             guard let device = await focusedTerminalDevice(bundleID) else { return false }
             return foregroundProcesses(onDevice: device, in: processTable()).contains(where: isClaudeCode)
@@ -58,29 +52,12 @@ public enum ClaudePrompt {
     }
 
     static func isTextInput(role: String?) -> Bool {
-        role == kAXTextAreaRole || role == kAXTextFieldRole
+        role == kAXTextAreaRole
     }
 
     /// The Claude Code extension's prompt box, a web view text area labelled "Message input".
     static func isClaudeCodePanel(description: String, classes: [String]) -> Bool {
         description == "Message input" && classes.contains { $0.hasPrefix("messageInput_") }
-    }
-
-    /// VS Code labels a terminal's input "Terminal 1, zsh Run the command: …", where the second part is the process title.
-    static func terminalTitle(_ description: String) -> String? {
-        description.firstMatch(of: #/^Terminal \d+, (\S+)/#).map { String($0.output.1) }
-    }
-
-    /// Claude Code titles its process with its version, such as 2.1.301.
-    static func isClaudeCodeProcessTitle(_ title: String?) -> Bool {
-        guard let title else { return false }
-        return title == "claude" || title.wholeMatch(of: #/\d+\.\d+\.\d+/#) != nil
-    }
-
-    /// Claude Code puts one of its spinner glyphs before the terminal title it sets, ✳ while it waits for a prompt.
-    static func isClaudeCodeWindowTitle(_ title: String?) -> Bool {
-        guard let title, let first = title.first else { return false }
-        return "✢✳✶✻✽".contains(first) && title.dropFirst().first == " "
     }
 
     // MARK: Terminal and iTerm2
@@ -125,21 +102,6 @@ public enum ClaudePrompt {
         var device: dev_t?
         /// In the foreground process group of its terminal, so it receives what is typed there.
         var isForeground: Bool
-    }
-
-    /// A title alone can be stale or set by anything, so Claude Code must also be in the foreground of one of the app's terminals.
-    static func foregroundProcesses(under root: pid_t, in table: [ProcessEntry]) -> [ProcessEntry] {
-        let children = Dictionary(grouping: table, by: \.parent)
-        var found: [ProcessEntry] = []
-        var pending = [root]
-        var seen: Set<pid_t> = [root]
-        while let pid = pending.popLast() {
-            for child in children[pid] ?? [] where seen.insert(child.pid).inserted {
-                if child.isForeground { found.append(child) }
-                pending.append(child.pid)
-            }
-        }
-        return found
     }
 
     static func foregroundProcesses(onDevice device: dev_t, in table: [ProcessEntry]) -> [ProcessEntry] {

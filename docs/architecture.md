@@ -144,19 +144,13 @@ dictation is followed by a Return key press when `ClaudePrompt` recognizes the
 focused field as a Claude prompt. Anything it does not recognize is only pasted,
 because Return in a shell runs a command:
 
-- Claude Desktop: the focused element is a text area or field.
-- VS Code: the Claude Code extension's "Message input" text area, or an
-  integrated terminal whose Accessibility label carries Claude Code's process
-  title (its version, such as 2.1.301) while a Claude Code process is in the
-  foreground of one of VS Code's terminals.
-- Ghostty: the focused window title starts with one of Claude Code's spinner
-  glyphs while a Claude Code process is in the foreground of one of Ghostty's
-  terminals. Ghostty doesn't say which terminal is focused, so a stale title on
-  a shell tab next to a Claude Code tab is a known gap.
+- Claude Desktop: the focused element is a text area. Text fields such as search are excluded.
+- VS Code: the Claude Code extension's "Message input" text area.
 - Terminal and iTerm2: an Apple Event asks the app for the focused tab's tty, and
   a Claude Code process must be in the foreground of that tty. This needs
   Automation consent, asked when the setting turns on or from its Allow button,
   never during a dictation; without it, nothing is sent.
+- Ghostty and VS Code terminals paste without sending. Their titles can outlive Claude Code, so they cannot prove that Return reaches a prompt.
 
 Claude Code is identified from the kernel's process list (`sysctl`) by its
 executable path or arguments, since the native installer's binary is named after

@@ -276,3 +276,54 @@ import Testing
     model.holdBackReturn()
     #expect(model.phase == .idle && armed == [true, false])
 }
+
+@Test(arguments: [Duration.milliseconds(120), .milliseconds(250)]) @MainActor
+func pendingSendStaysCancellableThroughTheFinalPromptCheck(delay: Duration) async throws {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let model = AppModel(store: LocalStore(directory: folder), startsServices: false)
+    model.settings.soundEffects = false
+    model.settings.sendToClaude = true
+    var checkStarted = false
+    var releaseCheck: CheckedContinuation<Bool, Never>?
+    var notSent = 0
+    model.pressReturn(in: .current, after: delay, using: FocusedAppIntegration(keepsCopy: false),
+                      otherwise: { notSent += 1 }, acceptsPrompt: { _ in
+        checkStarted = true
+        return await withCheckedContinuation { releaseCheck = $0 }
+    })
+    #expect(model.phase == .sending && model.phase.armsCancelShortcut)
+    let deadline = ContinuousClock.now + .seconds(2)
+    while !checkStarted, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+    try #require(checkStarted)
+    try await Task.sleep(for: .milliseconds(50))
+    #expect(model.phase == .sending && model.phase.armsCancelShortcut)
+    model.holdBackReturn()
+    #expect(model.phase == .idle && notSent == 1)
+    releaseCheck?.resume(returning: true)
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(model.phase == .idle && notSent == 1)
+}
+
+@Test @MainActor func disablingSendCancelsAnInFlightPromptCheck() async throws {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let model = AppModel(store: LocalStore(directory: folder), startsServices: false)
+    model.settings.soundEffects = false
+    model.settings.sendToClaude = true
+    var releaseCheck: CheckedContinuation<Bool, Never>?
+    var notSent = 0
+    model.pressReturn(in: .current, after: .zero, using: FocusedAppIntegration(keepsCopy: false),
+                      otherwise: { notSent += 1 }, acceptsPrompt: { _ in
+        await withCheckedContinuation { releaseCheck = $0 }
+    })
+    let deadline = ContinuousClock.now + .seconds(2)
+    while releaseCheck == nil, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+    try #require(releaseCheck != nil)
+    model.settings.sendToClaude = false
+    model.saveSettings()
+    #expect(model.phase == .idle && notSent == 1)
+    releaseCheck?.resume(returning: true)
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(model.phase == .idle && notSent == 1)
+}
