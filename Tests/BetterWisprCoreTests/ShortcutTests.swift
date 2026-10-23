@@ -217,3 +217,19 @@ import Testing
     #expect(send.isDisjoint(with: shared))
     #expect(FocusedAppIntegration.menuTitles(FocusedAppIntegration.sendClipboardKey, in: nil).isEmpty)
 }
+
+@Test @MainActor func sendToClaudeLeavesTheShiftVariantAvailableForTheConfiguredCancelShortcut() throws {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let model = AppModel(store: LocalStore(directory: folder), startsServices: false)
+    let f18 = try #require(DictationShortcut(keyCode: UInt32(kVK_F18), modifiers: [], key: "F18"))
+    let shiftF18 = try #require(DictationShortcut(keyCode: UInt32(kVK_F18), modifiers: [.shift], key: "F18"))
+    let cancel = GlobalShortcut(id: 11)
+    defer { cancel.unregister(); model.suspendShortcut() }
+    model.settings.shortcut = f18
+    model.settings.cancelShortcut = shiftF18
+    model.settings.sendToClaude = true
+    model.registerShortcut()
+    try cancel.register(shiftF18)
+    #expect(throws: ShortcutError.self) { try cancel.register(f18) }
+}

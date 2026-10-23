@@ -175,7 +175,7 @@ pasted after the first with a space (`TextJoin`) and its own Return sends both.
 Return is pressed only if the field is still a Claude prompt and the target app
 and focused element are unchanged, as a bare key press with modifier flags
 cleared. Otherwise the capsule says "Pasted, not sent". Sleep, quitting and
-turning the setting off cancel a pending Return.
+turning the setting off cancel a pending Return. Starting selected-text cleanup also holds back a pending Return. An explicit cancel or cleanup shortcut takes priority over the optional Shift variant of the dictation shortcut.
 
 The optional Clean up selected text shortcut (`AppSettings.selectedTextShortcut`,
 `GlobalShortcut` id 4) edits text outside a dictation and is refused while one

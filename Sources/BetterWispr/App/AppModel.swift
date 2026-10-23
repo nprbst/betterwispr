@@ -295,7 +295,7 @@ final class AppModel {
     func registerShortcut() {
         if let shortcut = settings.selectedTextShortcut { try? selectedTextShortcut.register(shortcut) }
         do {
-            try globalShortcut.register(settings.shortcut, withShift: settings.sendToClaude)
+            try globalShortcut.register(settings.shortcut, withShift: wantsShiftShortcut(for: settings.shortcut))
             if statusMessage == shortcutWarning { statusMessage = "" }
         } catch {
             statusMessage = "\(error.localizedDescription) Use the menu bar or Record button to dictate, or choose another shortcut in Settings."
@@ -326,7 +326,7 @@ final class AppModel {
             return
         }
         do {
-            try globalShortcut.register(shortcut, withShift: settings.sendToClaude)
+            try globalShortcut.register(shortcut, withShift: wantsShiftShortcut(for: shortcut))
         } catch {
             registerShortcut()
             ToastWindow.shared.show(Toast(failure: "Couldn’t use \(shortcut.displayName)", error))
@@ -447,6 +447,7 @@ final class AppModel {
     }
 
     func cleanUpSelectedText() {
+        holdBackReturn()
         guard selectedTextCleanup == nil else { showSelectedTextProgress(); return }
         selectedTextCleanup = Task { [weak self] in
             guard let self, let outcome = await self.selectedTextOutcome(), !Task.isCancelled else { return }
@@ -1305,9 +1306,16 @@ final class AppModel {
         defaults.removeObject(forKey: key)
     }
 
+    private func wantsShiftShortcut(for shortcut: DictationShortcut) -> Bool {
+        guard settings.sendToClaude, !shortcut.isModifierOnly, !shortcut.usesShift else { return false }
+        return ![settings.cancelShortcut, settings.selectedTextShortcut].compactMap { $0 }.contains {
+            $0.keyCode == shortcut.keyCode && $0.modifiers == shortcut.modifiers.union(.shift)
+        }
+    }
+
     /// Shift with the dictation shortcut is only taken from other apps while Send to Claude is on.
     private func syncShiftShortcut() {
-        guard startsServices, !isBusy, globalShortcut.isRegistered, settings.sendToClaude != globalShortcut.wantsShift else { return }
+        guard startsServices, !isBusy, globalShortcut.isRegistered, wantsShiftShortcut(for: settings.shortcut) != globalShortcut.wantsShift else { return }
         registerShortcut()
     }
 

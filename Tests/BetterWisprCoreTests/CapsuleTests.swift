@@ -367,3 +367,20 @@ func pendingSendStaysCancellableThroughTheFinalPromptCheck(delay: Duration) asyn
     try await Task.sleep(for: .milliseconds(30))
     #expect(model.phase == .idle && notSent == 1)
 }
+
+@Test @MainActor func selectedTextCleanupHoldsBackAPendingSendBeforeStarting() async throws {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let model = AppModel(store: LocalStore(directory: folder), startsServices: false)
+    model.settings.sendToClaude = true
+    var notSent = 0
+    model.pressReturn(in: .current, after: .seconds(1), using: FocusedAppIntegration(keepsCopy: false),
+                      otherwise: { notSent += 1 }, acceptsPrompt: { _ in false })
+    model.cleanUpSelectedText()
+    #expect(model.phase == .idle && notSent == 1)
+    // Keep the cleanup task from reading the user's actual selection in this test.
+    model.phase = .preparing
+    await Task.yield()
+    model.phase = .idle
+    #expect(notSent == 1)
+}
